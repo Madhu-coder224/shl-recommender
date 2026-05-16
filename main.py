@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from typing import Literal, List
+from typing import Literal, List, Optional
 
 import google.generativeai as genai
 from fastapi import FastAPI, HTTPException
@@ -20,14 +20,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-
-if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY must be set")
-
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-pro")
 
 SYSTEM_PROMPT = """You are an expert SHL assessment consultant chatbot. Your role is to help HR professionals and hiring managers identify the most appropriate SHL assessments for their job roles and hiring needs.
 
@@ -75,6 +67,20 @@ SYSTEM_ACK = json.dumps({
     "end_of_conversation": False,
 })
 
+# Lazy-initialized — avoids crashing at startup if env var is missing
+_model: Optional[genai.GenerativeModel] = None
+
+
+def get_model() -> genai.GenerativeModel:
+    global _model
+    if _model is None:
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="GEMINI_API_KEY environment variable is not set")
+        genai.configure(api_key=api_key)
+        _model = genai.GenerativeModel("gemini-pro")
+    return _model
+
 
 class Message(BaseModel):
     role: Literal["user", "assistant"]
@@ -106,6 +112,8 @@ def health():
 def chat(request: ChatRequest):
     if not request.messages:
         raise HTTPException(status_code=400, detail="messages list cannot be empty")
+
+    model = get_model()
 
     contents = [
         {"role": "user", "parts": [{"text": f"[SYSTEM INSTRUCTIONS]\n{SYSTEM_PROMPT}\n\nAcknowledge you understand and are ready to help."}]},
