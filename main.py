@@ -454,7 +454,7 @@ def get_model() -> genai.GenerativeModel:
         if not api_key:
             raise HTTPException(status_code=500, detail="GEMINI_API_KEY environment variable is not set")
         genai.configure(api_key=api_key)
-        _model = genai.GenerativeModel("gemini-1.5-flash-latest")
+        _model = genai.GenerativeModel("gemini-1.5-flash")
     return _model
 
 
