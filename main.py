@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from typing import Literal
+from typing import Literal, List
 
 import google.generativeai as genai
 from fastapi import FastAPI, HTTPException
@@ -72,7 +72,7 @@ The "recommendations" list should be empty [] if you are still gathering informa
 SYSTEM_ACK = json.dumps({
     "reply": "I understand. I am an expert SHL assessment consultant ready to help you identify the right assessments for your hiring needs.",
     "recommendations": [],
-    "end_of_conversation": False
+    "end_of_conversation": False,
 })
 
 
@@ -82,7 +82,7 @@ class Message(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    messages: list[Message]
+    messages: List[Message]
 
 
 class Recommendation(BaseModel):
@@ -93,7 +93,7 @@ class Recommendation(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
-    recommendations: list[Recommendation]
+    recommendations: List[Recommendation]
     end_of_conversation: bool
 
 
