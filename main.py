@@ -450,7 +450,7 @@ _model: Optional[genai.GenerativeModel] = None
 def get_model() -> genai.GenerativeModel:
     global _model
     if _model is None:
-        api_key = os.environ.get("GEMINI_API_KEY")
+        api_key = os.environ.get("GEMINI_API_KEY","AIzaSyBR3tb2uDiAjQEri1VfWHOPz1FoIdI3DA8")
         if not api_key:
             raise HTTPException(status_code=500, detail="GEMINI_API_KEY environment variable is not set")
         genai.configure(api_key=api_key)
