@@ -3,11 +3,10 @@ import json
 import logging
 from typing import Literal
 
+import google.generativeai as genai
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from google import genai
-from google.genai import types
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,7 +26,8 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY must be set")
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-pro")
 
 SYSTEM_PROMPT = """You are an expert SHL assessment consultant chatbot. Your role is to help HR professionals and hiring managers identify the most appropriate SHL assessments for their job roles and hiring needs.
 
@@ -67,7 +67,13 @@ IMPORTANT: You MUST respond ONLY with a valid JSON object in this exact format. 
   "end_of_conversation": false
 }
 
-The "recommendations" list should be empty [] if you are still gathering information or the user has not asked for recommendations yet. Include assessments only when you have enough context to make a confident recommendation. Always include the exact URL from the catalog above for each recommended assessment."""
+The "recommendations" list should be empty [] if you are still gathering information. Always include the exact URL from the catalog above for each recommended assessment."""
+
+SYSTEM_ACK = json.dumps({
+    "reply": "I understand. I am an expert SHL assessment consultant ready to help you identify the right assessments for your hiring needs.",
+    "recommendations": [],
+    "end_of_conversation": False
+})
 
 
 class Message(BaseModel):
@@ -101,31 +107,32 @@ def chat(request: ChatRequest):
     if not request.messages:
         raise HTTPException(status_code=400, detail="messages list cannot be empty")
 
-    contents = []
+    contents = [
+        {"role": "user", "parts": [{"text": f"[SYSTEM INSTRUCTIONS]\n{SYSTEM_PROMPT}\n\nAcknowledge you understand and are ready to help."}]},
+        {"role": "model", "parts": [{"text": SYSTEM_ACK}]},
+    ]
+
     for msg in request.messages:
         role = "model" if msg.role == "assistant" else "user"
-        contents.append(
-            types.Content(
-                role=role,
-                parts=[types.Part(text=msg.content)],
-            )
-        )
+        contents.append({"role": role, "parts": [{"text": msg.content}]})
 
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                response_mime_type="application/json",
-                max_output_tokens=8192,
+        response = model.generate_content(
+            contents,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.2,
+                max_output_tokens=2048,
             ),
         )
+        raw_text = response.text or ""
     except Exception as e:
         logger.error(f"Gemini API error: {e}")
         raise HTTPException(status_code=502, detail=f"AI service error: {str(e)}")
 
-    raw_text = response.text or ""
+    raw_text = raw_text.strip()
+    if raw_text.startswith("```"):
+        raw_text = raw_text.split("\n", 1)[-1]
+        raw_text = raw_text.rsplit("```", 1)[0].strip()
 
     try:
         data = json.loads(raw_text)
@@ -143,7 +150,7 @@ def chat(request: ChatRequest):
             end_of_conversation=bool(data.get("end_of_conversation", False)),
         )
     except (json.JSONDecodeError, KeyError, TypeError) as e:
-        logger.warning(f"Failed to parse structured response, falling back: {e}\nRaw: {raw_text}")
+        logger.warning(f"Failed to parse structured response: {e}\nRaw: {raw_text}")
         return ChatResponse(
             reply=raw_text,
             recommendations=[],
